@@ -15,6 +15,18 @@ const TransitionStatusSchema = z.object({
   status: z.enum(['active', 'final', 'cancelled']),
 });
 
+const UpdateGameStateSchema = z.object({
+  period: z.number().int().min(1).max(10).optional(),
+  clockRunning: z.boolean().optional(),
+  clockSecondsRemaining: z.number().int().min(0).optional(),
+  clockLastStartedAt: z.number().int().min(0).optional(),
+  shotClockSeconds: z.number().int().min(0).max(30).optional(),
+  homeFouls: z.number().int().min(0).optional(),
+  awayFouls: z.number().int().min(0).optional(),
+  homeTimeouts: z.number().int().min(0).optional(),
+  awayTimeouts: z.number().int().min(0).optional(),
+});
+
 export function createGamesRouter(gamesController: GamesController): Router {
   const router = Router();
 
@@ -36,6 +48,17 @@ export function createGamesRouter(gamesController: GamesController): Router {
     requireAuth(),
     validate(TransitionStatusSchema),
     gamesController.transitionStatus,
+  );
+
+  // Public — fans fetch the current live state snapshot on connect
+  router.get('/:gameId/state', gamesController.getState);
+
+  // Any valid key can push state updates (coaches use game-scoped keys)
+  router.patch(
+    '/:gameId/state',
+    requireAuth(),
+    validate(UpdateGameStateSchema),
+    gamesController.updateState,
   );
 
   return router;

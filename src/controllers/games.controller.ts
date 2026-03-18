@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { GamesService } from '../domains/games/games.service';
-import { CreateGameInput, StatusTransition } from '../domains/games/games.types';
+import { CreateGameInput, GameState, StatusTransition } from '../domains/games/games.types';
 import { successResponse } from '../shared/response/api-response';
 
 export class GamesController {
@@ -48,6 +48,27 @@ export class GamesController {
 
       const game = await this.gamesService.transitionStatus(gameId, status);
       res.json(successResponse({ game }, req.requestId));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateState = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { gameId } = req.params;
+      const patch = req.body as GameState;
+      const state = await this.gamesService.updateGameState(gameId, patch);
+      res.json(successResponse({ state }, req.requestId));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getState = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { gameId } = req.params;
+      const snapshot = await this.gamesService.getGameSnapshot(gameId);
+      res.json(successResponse(snapshot, req.requestId));
     } catch (err) {
       next(err);
     }

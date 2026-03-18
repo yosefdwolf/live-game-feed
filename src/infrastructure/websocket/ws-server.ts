@@ -57,23 +57,29 @@ export function createWsServer(server: http.Server, deps: WsServerDeps): WebSock
     clearInterval(pingInterval);
   });
 
-  // Forward Redis Pub/Sub messages to WebSocket clients
+  // Forward Redis Pub/Sub messages to WebSocket clients.
+  // Each message published to the channel carries a `type` field that maps
+  // directly to the WsMessage type — event_update, state_update, status_change.
   redisSubscriber.on('message', (channel: string, message: string) => {
     // channel format: lgf:v1:game:{gameId}:events
     const parts = channel.split(':');
     const gameId = parts[3];
     if (!gameId) return;
 
-    let parsed: unknown;
+    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(message);
+      parsed = JSON.parse(message) as Record<string, unknown>;
     } catch {
       console.error('Failed to parse Redis Pub/Sub message', { channel });
       return;
     }
 
+    // Use the type embedded in the Redis message; default to event_update for
+    // backwards compatibility with any messages that predate this field.
+    const msgType = (parsed.type as WsMessage['type']) ?? 'event_update';
+
     const wsMessage: WsMessage = {
-      type: 'event_update',
+      type: msgType,
       payload: parsed,
       timestamp: new Date().toISOString(),
     };
@@ -95,8 +101,11 @@ export function createWsServer(server: http.Server, deps: WsServerDeps): WebSock
 
     // 2. Send catch-up game_state message
     try {
-      const game = await gamesService.getGame(gameId);
-      const recentEvents = await gamesCacheRepository.getRecentEvents(gameId);
+      const [game, snapshot, recentEvents] = await Promise.all([
+        gamesService.getGame(gameId),
+        gamesService.getGameSnapshot(gameId),
+        gamesCacheRepository.getRecentEvents(gameId),
+      ]);
 
       const catchUpPayload: GameStatePayload = {
         game: {
@@ -106,6 +115,7 @@ export function createWsServer(server: http.Server, deps: WsServerDeps): WebSock
           period: game.period,
           clock: game.clock,
           status: game.status,
+          state: snapshot.state,
         },
         recentEvents,
       };

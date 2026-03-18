@@ -1,5 +1,32 @@
 export type GameStatus = 'scheduled' | 'active' | 'final' | 'cancelled';
 
+/**
+ * Live game state managed by the coach and broadcast to all clients via WebSocket.
+ * The clock is represented as an anchor rather than a live value:
+ *   - clockLastStartedAt: epoch-ms when the clock was last started
+ *   - clockSecondsRemaining: seconds on the clock when it was last started/paused
+ * Clients compute current time as: clockSecondsRemaining - floor((now - clockLastStartedAt) / 1000)
+ * This avoids server-side ticks — only start/pause events hit the server.
+ */
+export interface GameState {
+  period?: number;
+  clockRunning?: boolean;
+  clockSecondsRemaining?: number;
+  clockLastStartedAt?: number; // epoch ms
+  shotClockSeconds?: number;
+  homeFouls?: number;
+  awayFouls?: number;
+  homeTimeouts?: number;
+  awayTimeouts?: number;
+}
+
+export interface GameStateSnapshot {
+  state: GameState;
+  status: string;
+  homeScore: number;
+  awayScore: number;
+}
+
 export interface Game {
   id: string;
   homeTeamId: string;

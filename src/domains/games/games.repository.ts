@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { Game, GameStatus, CreateGameInput, UpdateScoreInput } from './games.types';
+import { Game, GameStatus, GameState, GameStateSnapshot, CreateGameInput, UpdateScoreInput } from './games.types';
 import { decodeCursor, encodeCursor } from '../../shared/pagination/cursor';
 
 function rowToGame(row: Record<string, unknown>): Game {
@@ -126,6 +126,44 @@ export class GamesRepository {
         WHERE id = $1`,
       [gameId, input.homeScore, input.awayScore],
     );
+  }
+
+  /**
+   * Merges a partial state patch into the games.state JSONB column using the
+   * PostgreSQL || operator. Fields not included in the patch are preserved.
+   * Returns the full merged state after the update.
+   */
+  async updateState(gameId: string, patch: GameState): Promise<GameState> {
+    const result = await this.pool.query(
+      `UPDATE games
+          SET state = COALESCE(state, '{}') || $2::jsonb,
+              updated_at = NOW()
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING state`,
+      [gameId, JSON.stringify(patch)],
+    );
+    if (result.rows.length === 0) return {};
+    return (result.rows[0].state as GameState) ?? {};
+  }
+
+  /**
+   * Returns the live state snapshot used by GET /games/:id/state and WS on-connect.
+   * Reads directly from Postgres (not cache) to guarantee freshness for new subscribers.
+   */
+  async findStateSnapshot(gameId: string): Promise<GameStateSnapshot | null> {
+    const result = await this.pool.query(
+      `SELECT state, status, home_score, away_score
+         FROM games WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [gameId],
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      state: (row.state as GameState) ?? {},
+      status: row.status as string,
+      homeScore: row.home_score as number,
+      awayScore: row.away_score as number,
+    };
   }
 
   /**

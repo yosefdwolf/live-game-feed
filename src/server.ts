@@ -12,6 +12,7 @@ import { GamesRepository } from './domains/games/games.repository';
 import { GamesCacheRepository } from './domains/games/games.cache-repository';
 import { EventsRepository } from './domains/events/events.repository';
 import { EventPublisher } from './domains/events/events.publisher';
+import { GamesPublisher } from './domains/games/games.publisher';
 
 // Services
 import { AuthService } from './domains/auth/auth.service';
@@ -45,12 +46,13 @@ const gamesRepository = new GamesRepository(pool);
 const gamesCacheRepository = new GamesCacheRepository(redisClient);
 const eventsRepository = new EventsRepository(pool);
 const eventPublisher = new EventPublisher(redisClient);
+const gamesPublisher = new GamesPublisher(redisClient);
 
 // Services
 const authService = new AuthService(authRepository, authCacheRepository);
 const teamsService = new TeamsService(teamsRepository);
 const playersService = new PlayersService(playersRepository, teamsRepository);
-const gamesService = new GamesService(gamesRepository, gamesCacheRepository, teamsRepository);
+const gamesService = new GamesService(gamesRepository, gamesCacheRepository, teamsRepository, gamesPublisher);
 const eventsService = new EventsService(
   eventsRepository,
   gamesRepository,

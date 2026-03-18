@@ -1,7 +1,15 @@
 import { GamesRepository } from './games.repository';
 import { GamesCacheRepository } from './games.cache-repository';
+import { GamesPublisher } from './games.publisher';
 import { TeamsRepository } from '../teams/teams.repository';
-import { Game, CreateGameInput, StatusTransition, VALID_TRANSITIONS } from './games.types';
+import {
+  Game,
+  GameState,
+  GameStateSnapshot,
+  CreateGameInput,
+  StatusTransition,
+  VALID_TRANSITIONS,
+} from './games.types';
 import { NotFoundError, ValidationError } from '../../shared/errors/app-errors';
 import { encodeCursor } from '../../shared/pagination/cursor';
 
@@ -10,6 +18,7 @@ export class GamesService {
     private readonly gamesRepository: GamesRepository,
     private readonly gamesCacheRepository: GamesCacheRepository,
     private readonly teamsRepository: TeamsRepository,
+    private readonly gamesPublisher: GamesPublisher,
   ) {}
 
   /**
@@ -120,6 +129,45 @@ export class GamesService {
       });
     });
 
+    // Broadcast status change to all connected WebSocket clients
+    this.gamesPublisher.publishStatusChange(gameId, newStatus).catch((err: Error) => {
+      console.error('Failed to publish status_change', { gameId, error: err.message });
+    });
+
     return updated;
+  }
+
+  /**
+   * Merges a partial state patch into the game's state JSONB column,
+   * then broadcasts the full merged state to all connected WebSocket clients.
+   * The clock is represented as an anchor (lastStartedAt + secondsRemaining)
+   * so clients compute current time locally without server ticks.
+   */
+  async updateGameState(gameId: string, patch: GameState): Promise<GameState> {
+    const game = await this.gamesRepository.findById(gameId);
+    if (!game) {
+      throw new NotFoundError(`Game with id '${gameId}' was not found`);
+    }
+
+    const mergedState = await this.gamesRepository.updateState(gameId, patch);
+
+    // Broadcast merged state to all connected fans (fire-and-forget)
+    this.gamesPublisher.publishStateUpdate(gameId, mergedState).catch((err: Error) => {
+      console.error('Failed to publish state_update', { gameId, error: err.message });
+    });
+
+    return mergedState;
+  }
+
+  /**
+   * Returns the current live state snapshot for a game.
+   * Always reads from Postgres (not cache) to guarantee freshness for new WS subscribers.
+   */
+  async getGameSnapshot(gameId: string): Promise<GameStateSnapshot> {
+    const snapshot = await this.gamesRepository.findStateSnapshot(gameId);
+    if (!snapshot) {
+      throw new NotFoundError(`Game with id '${gameId}' was not found`);
+    }
+    return snapshot;
   }
 }
