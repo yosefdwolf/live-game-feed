@@ -27,7 +27,7 @@ async function migrate(): Promise<void> {
       )
     `);
 
-    const migrationsDir = path.resolve(__dirname, '../migrations');
+    const migrationsDir = path.resolve(process.cwd(), 'migrations');
     const files = fs
       .readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql'))
